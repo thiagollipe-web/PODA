@@ -12,14 +12,12 @@ export class GameRenderer {
 
     this.robotImage = new Image();
     this.robotLoaded = false;
+    this.robotCanvas = null;
+
     this.onAssetLoaded = onAssetLoaded;
 
     this.robotImage.onload = () => {
-      this.robotLoaded = true;
-
-      if (this.onAssetLoaded) {
-        this.onAssetLoaded();
-      }
+      this.prepareRobotImage();
     };
 
     this.robotImage.onerror = () => {
@@ -33,11 +31,157 @@ export class GameRenderer {
     this.robotImage.src = ROBOT_ASSET;
   }
 
-  render(engine) {
-    const snapshot = engine.getSnapshot();
-    const { ctx } = this;
+  // ============================================================
+  // ROBOT IMAGE PREPARATION
+  // ============================================================
+
+  prepareRobotImage() {
+    const width = this.robotImage.naturalWidth;
+    const height = this.robotImage.naturalHeight;
+
+    if (!width || !height) {
+      this.robotLoaded = false;
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    });
+
+    if (!ctx) {
+      this.robotLoaded = false;
+      return;
+    }
 
     ctx.imageSmoothingEnabled = false;
+
+    ctx.drawImage(
+      this.robotImage,
+      0,
+      0
+    );
+
+    const imageData = ctx.getImageData(
+      0,
+      0,
+      width,
+      height
+    );
+
+    const data = imageData.data;
+
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    // Procura somente pixels visíveis.
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const index =
+          (y * width + x) * 4;
+
+        const alpha = data[index + 3];
+
+        if (alpha > 10) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    }
+
+    // Nenhum pixel visível.
+    if (
+      maxX < 0 ||
+      maxY < 0
+    ) {
+      this.robotLoaded = false;
+      return;
+    }
+
+    const padding = 1;
+
+    minX = Math.max(
+      0,
+      minX - padding
+    );
+
+    minY = Math.max(
+      0,
+      minY - padding
+    );
+
+    maxX = Math.min(
+      width - 1,
+      maxX + padding
+    );
+
+    maxY = Math.min(
+      height - 1,
+      maxY + padding
+    );
+
+    const cropWidth =
+      maxX - minX + 1;
+
+    const cropHeight =
+      maxY - minY + 1;
+
+    const cropped =
+      document.createElement("canvas");
+
+    cropped.width = cropWidth;
+    cropped.height = cropHeight;
+
+    const croppedCtx =
+      cropped.getContext("2d");
+
+    if (!croppedCtx) {
+      this.robotLoaded = false;
+      return;
+    }
+
+    croppedCtx.imageSmoothingEnabled =
+      false;
+
+    croppedCtx.drawImage(
+      canvas,
+      minX,
+      minY,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      cropWidth,
+      cropHeight
+    );
+
+    this.robotCanvas = cropped;
+    this.robotLoaded = true;
+
+    if (this.onAssetLoaded) {
+      this.onAssetLoaded();
+    }
+  }
+
+  // ============================================================
+  // MAIN RENDER
+  // ============================================================
+
+  render(engine) {
+    const snapshot =
+      engine.getSnapshot();
+
+    const { ctx } = this;
+
+    ctx.imageSmoothingEnabled =
+      false;
 
     ctx.clearRect(
       0,
@@ -47,10 +191,20 @@ export class GameRenderer {
     );
 
     this.drawBackground();
+
     this.drawGrid(snapshot);
-    this.drawPlantConnections(snapshot);
-    this.drawGem(snapshot.gem);
-    this.drawRobot(snapshot.player);
+
+    this.drawPlantConnections(
+      snapshot
+    );
+
+    this.drawGem(
+      snapshot.gem
+    );
+
+    this.drawRobot(
+      snapshot.player
+    );
   }
 
   // ============================================================
@@ -77,7 +231,8 @@ export class GameRenderer {
   drawGrid(snapshot) {
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
-        const type = snapshot.grid[y][x];
+        const type =
+          snapshot.grid[y][x];
 
         switch (type) {
           case TYPE.WALL:
@@ -89,11 +244,19 @@ export class GameRenderer {
             break;
 
           case TYPE.PLANT:
-            this.drawPlantNode(x, y, false);
+            this.drawPlantNode(
+              x,
+              y,
+              false
+            );
             break;
 
           case TYPE.POWERED:
-            this.drawPlantNode(x, y, true);
+            this.drawPlantNode(
+              x,
+              y,
+              true
+            );
             break;
 
           default:
@@ -112,20 +275,37 @@ export class GameRenderer {
     ctx.lineWidth = 1;
 
     for (let x = 0; x <= COLS; x++) {
-      const px = x * TILE + 0.5;
+      const px =
+        x * TILE + 0.5;
 
       ctx.beginPath();
+
       ctx.moveTo(px, 0);
-      ctx.lineTo(px, ROWS * TILE);
+
+      ctx.lineTo(
+        px,
+        ROWS * TILE
+      );
+
       ctx.stroke();
     }
 
     for (let y = 0; y <= ROWS; y++) {
-      const py = y * TILE + 0.5;
+      const py =
+        y * TILE + 0.5;
 
       ctx.beginPath();
-      ctx.moveTo(0, py);
-      ctx.lineTo(COLS * TILE, py);
+
+      ctx.moveTo(
+        0,
+        py
+      );
+
+      ctx.lineTo(
+        COLS * TILE,
+        py
+      );
+
       ctx.stroke();
     }
   }
@@ -159,7 +339,6 @@ export class GameRenderer {
       TILE - 2
     );
 
-    // Detalhes pixelados
     ctx.fillStyle = "#242424";
 
     ctx.fillRect(
@@ -197,9 +376,8 @@ export class GameRenderer {
     const centerY =
       y * TILE + TILE / 2;
 
-    // Raízes principais
     ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 5;
+    ctx.lineWidth = 6;
     ctx.lineCap = "square";
 
     ctx.beginPath();
@@ -210,7 +388,7 @@ export class GameRenderer {
     );
 
     ctx.lineTo(
-      centerX - 13,
+      centerX - 14,
       centerY
     );
 
@@ -220,7 +398,7 @@ export class GameRenderer {
     );
 
     ctx.lineTo(
-      centerX + 13,
+      centerX + 14,
       centerY
     );
 
@@ -231,7 +409,7 @@ export class GameRenderer {
 
     ctx.lineTo(
       centerX,
-      centerY - 13
+      centerY - 14
     );
 
     ctx.moveTo(
@@ -241,13 +419,13 @@ export class GameRenderer {
 
     ctx.lineTo(
       centerX,
-      centerY + 13
+      centerY + 14
     );
 
     ctx.stroke();
 
-    // Ramificações menores
-    ctx.lineWidth = 2;
+    // Ramificações secundárias
+    ctx.lineWidth = 3;
 
     ctx.beginPath();
 
@@ -257,8 +435,8 @@ export class GameRenderer {
     );
 
     ctx.lineTo(
-      centerX - 12,
-      centerY - 6
+      centerX - 13,
+      centerY - 7
     );
 
     ctx.moveTo(
@@ -267,8 +445,8 @@ export class GameRenderer {
     );
 
     ctx.lineTo(
-      centerX + 12,
-      centerY + 6
+      centerX + 13,
+      centerY + 7
     );
 
     ctx.moveTo(
@@ -277,8 +455,8 @@ export class GameRenderer {
     );
 
     ctx.lineTo(
-      centerX - 6,
-      centerY + 12
+      centerX - 7,
+      centerY + 13
     );
 
     ctx.stroke();
@@ -287,13 +465,12 @@ export class GameRenderer {
     ctx.fillStyle = "#fff";
 
     ctx.fillRect(
-      centerX - 5,
-      centerY - 5,
-      10,
-      10
+      centerX - 6,
+      centerY - 6,
+      12,
+      12
     );
 
-    // Centro
     ctx.fillStyle = "#000";
 
     ctx.fillRect(
@@ -309,7 +486,10 @@ export class GameRenderer {
   // ============================================================
 
   drawPlantConnections(snapshot) {
-    if (!snapshot?.connectedNodes) {
+    if (
+      !snapshot ||
+      !snapshot.connectedNodes
+    ) {
       return;
     }
 
@@ -320,18 +500,10 @@ export class GameRenderer {
       return;
     }
 
-    /*
-     * O Graph é direcional:
-     *
-     * pai -> filho
-     *
-     * O renderer apenas desenha as
-     * conexões existentes.
-     *
-     * Ele não cria novas conexões.
-     */
-
-    for (const [from, neighbors] of entries) {
+    for (const [
+      from,
+      neighbors,
+    ] of entries) {
       const fromPosition =
         this.keyToPosition(from);
 
@@ -347,15 +519,13 @@ export class GameRenderer {
           continue;
         }
 
-        const fromConnected =
-          snapshot.connectedNodes.has(from);
-
-        const toConnected =
-          snapshot.connectedNodes.has(to);
-
         const powered =
-          fromConnected &&
-          toConnected;
+          snapshot.connectedNodes.has(
+            from
+          ) &&
+          snapshot.connectedNodes.has(
+            to
+          );
 
         this.drawBranchSegment(
           fromPosition,
@@ -389,44 +559,32 @@ export class GameRenderer {
       to.y * TILE +
       TILE / 2;
 
-    ctx.strokeStyle = powered
-      ? "#fff"
-      : "#555";
+    ctx.strokeStyle =
+      powered
+        ? "#fff"
+        : "#555";
 
-    ctx.lineWidth = powered
-      ? 6
-      : 4;
+    ctx.lineWidth =
+      powered
+        ? 6
+        : 4;
 
-    ctx.lineCap = "square";
+    ctx.lineCap =
+      "square";
 
     ctx.beginPath();
 
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
+    ctx.moveTo(
+      x1,
+      y1
+    );
+
+    ctx.lineTo(
+      x2,
+      y2
+    );
 
     ctx.stroke();
-
-    // Pequeno nó central
-    ctx.fillStyle = powered
-      ? "#fff"
-      : "#666";
-
-    const centerX =
-      Math.round(
-        (x1 + x2) / 2
-      );
-
-    const centerY =
-      Math.round(
-        (y1 + y2) / 2
-      );
-
-    ctx.fillRect(
-      centerX - 2,
-      centerY - 2,
-      4,
-      4
-    );
   }
 
   // ============================================================
@@ -448,17 +606,19 @@ export class GameRenderer {
       y * TILE +
       TILE / 2;
 
-    const color = powered
-      ? "#fff"
-      : "#666";
+    const color =
+      powered
+        ? "#fff"
+        : "#666";
 
     // Folha esquerda
-    ctx.fillStyle = color;
+    ctx.fillStyle =
+      color;
 
     ctx.fillRect(
-      centerX - 11,
+      centerX - 12,
       centerY - 3,
-      7,
+      8,
       5
     );
 
@@ -466,11 +626,11 @@ export class GameRenderer {
     ctx.fillRect(
       centerX + 4,
       centerY - 3,
-      7,
+      8,
       5
     );
 
-    // Nó principal
+    // Nó
     ctx.fillRect(
       centerX - 6,
       centerY - 6,
@@ -479,9 +639,10 @@ export class GameRenderer {
     );
 
     // Núcleo
-    ctx.fillStyle = powered
-      ? "#000"
-      : "#222";
+    ctx.fillStyle =
+      powered
+        ? "#000"
+        : "#222";
 
     ctx.fillRect(
       centerX - 2,
@@ -514,10 +675,10 @@ export class GameRenderer {
     ctx.fillStyle = "#222";
 
     ctx.fillRect(
-      centerX - 15,
-      centerY - 15,
-      30,
-      30
+      centerX - 16,
+      centerY - 16,
+      32,
+      32
     );
 
     // Diamante
@@ -615,76 +776,79 @@ export class GameRenderer {
       position.y * TILE +
       TILE / 2;
 
-    /*
-     * Fallback primeiro.
-     *
-     * Isso evita que o robô desapareça
-     * enquanto robot.png carrega.
-     */
-
+    // Fallback
     this.drawRobotFallback(
       centerX,
       centerY
     );
 
     if (
-      this.robotLoaded &&
-      this.robotImage.complete &&
-      this.robotImage.naturalWidth > 0 &&
-      this.robotImage.naturalHeight > 0
+      !this.robotLoaded ||
+      !this.robotCanvas
     ) {
-      const maxSize =
-        TILE * 0.78;
-
-      const imageWidth =
-        this.robotImage.naturalWidth;
-
-      const imageHeight =
-        this.robotImage.naturalHeight;
-
-      const scale =
-        Math.min(
-          maxSize / imageWidth,
-          maxSize / imageHeight
-        );
-
-      const width =
-        Math.max(
-          1,
-          Math.round(
-            imageWidth * scale
-          )
-        );
-
-      const height =
-        Math.max(
-          1,
-          Math.round(
-            imageHeight * scale
-          )
-        );
-
-      const drawX =
-        Math.round(
-          centerX - width / 2
-        );
-
-      const drawY =
-        Math.round(
-          centerY - height / 2
-        );
-
-      ctx.imageSmoothingEnabled =
-        false;
-
-      ctx.drawImage(
-        this.robotImage,
-        drawX,
-        drawY,
-        width,
-        height
-      );
+      return;
     }
+
+    const imageWidth =
+      this.robotCanvas.width;
+
+    const imageHeight =
+      this.robotCanvas.height;
+
+    /*
+     * Agora o tamanho é calculado
+     * sobre o personagem recortado,
+     * e não sobre o PNG inteiro.
+     */
+
+    const maxWidth =
+      TILE * 0.92;
+
+    const maxHeight =
+      TILE * 0.92;
+
+    const scale =
+      Math.min(
+        maxWidth / imageWidth,
+        maxHeight / imageHeight
+      );
+
+    const width =
+      Math.max(
+        1,
+        Math.round(
+          imageWidth * scale
+        )
+      );
+
+    const height =
+      Math.max(
+        1,
+        Math.round(
+          imageHeight * scale
+        )
+      );
+
+    const drawX =
+      Math.round(
+        centerX - width / 2
+      );
+
+    const drawY =
+      Math.round(
+        centerY - height / 2
+      );
+
+    ctx.imageSmoothingEnabled =
+      false;
+
+    ctx.drawImage(
+      this.robotCanvas,
+      drawX,
+      drawY,
+      width,
+      height
+    );
   }
 
   drawRobotFallback(
@@ -711,26 +875,35 @@ export class GameRenderer {
 
     ctx.fillStyle = "#000";
 
-    // Olho esquerdo
     ctx.fillRect(
-      Math.round(centerX - 7),
-      Math.round(centerY - 6),
+      Math.round(
+        centerX - 7
+      ),
+      Math.round(
+        centerY - 6
+      ),
       4,
       4
     );
 
-    // Olho direito
     ctx.fillRect(
-      Math.round(centerX + 3),
-      Math.round(centerY - 6),
+      Math.round(
+        centerX + 3
+      ),
+      Math.round(
+        centerY - 6
+      ),
       4,
       4
     );
 
-    // Boca
     ctx.fillRect(
-      Math.round(centerX - 6),
-      Math.round(centerY + 5),
+      Math.round(
+        centerX - 6
+      ),
+      Math.round(
+        centerY + 5
+      ),
       12,
       2
     );
