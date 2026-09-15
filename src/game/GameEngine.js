@@ -1,9 +1,9 @@
 import {
   COLS,
   ROWS,
+  TYPE,
   DIRECTIONS,
   MAX_PLANT_NODES,
-  TYPE
 } from "./constants.js";
 
 import { Graph } from "./Graph.js";
@@ -12,7 +12,6 @@ import { bfs } from "./algorithms.js";
 export class GameEngine {
   constructor() {
     this.listeners = new Set();
-
     this.reset();
   }
 
@@ -35,51 +34,38 @@ export class GameEngine {
   reset() {
     this.gameOver = false;
     this.victory = false;
-
     this.score = 0;
 
-    this.message =
-      "Use as setas para mover o robô e ESPAÇO para podar.";
+    this.message = "CONECTE A PLANTA AO GEM";
+    this.lastAction = null;
 
     this.player = {
       x: 1,
-      y: 1
+      y: 1,
     };
 
     this.root = {
       x: 6,
-      y: 6
+      y: 6,
     };
 
     this.gem = {
       x: 10,
-      y: 1
+      y: 1,
     };
 
     this.grid = this.createGrid();
 
     this.graph = new Graph();
 
-    const rootKey = this.key(
-      this.root.x,
-      this.root.y
-    );
+    const rootKey = this.getRootKey();
 
     this.graph.addNode(rootKey);
 
-    this.grid[
-      this.root.y
-    ][this.root.x] = TYPE.ROOT;
+    this.grid[this.root.y][this.root.x] = TYPE.ROOT;
+    this.grid[this.gem.y][this.gem.x] = TYPE.GEM;
 
-    this.grid[
-      this.gem.y
-    ][this.gem.x] = TYPE.GEM;
-
-    this.connectedNodes = new Set([
-      rootKey
-    ]);
-
-    this.lastAction = null;
+    this.connectedNodes = new Set([rootKey]);
 
     this.validateGraph();
 
@@ -92,20 +78,15 @@ export class GameEngine {
       () => Array(COLS).fill(TYPE.EMPTY)
     );
 
-    /*
-     * Borda externa do mapa.
-     */
+    // Bordas
+    for (let x = 0; x < COLS; x++) {
+      grid[0][x] = TYPE.WALL;
+      grid[ROWS - 1][x] = TYPE.WALL;
+    }
+
     for (let y = 0; y < ROWS; y++) {
-      for (let x = 0; x < COLS; x++) {
-        if (
-          x === 0 ||
-          x === COLS - 1 ||
-          y === 0 ||
-          y === ROWS - 1
-        ) {
-          grid[y][x] = TYPE.WALL;
-        }
-      }
+      grid[y][0] = TYPE.WALL;
+      grid[y][COLS - 1] = TYPE.WALL;
     }
 
     return grid;
@@ -116,13 +97,11 @@ export class GameEngine {
   }
 
   fromKey(key) {
-    const [x, y] = key
-      .split(",")
-      .map(Number);
+    const [x, y] = key.split(",").map(Number);
 
     return {
       x,
-      y
+      y,
     };
   }
 
@@ -150,15 +129,30 @@ export class GameEngine {
   }
 
   getPlantKeys() {
-    const rootKey =
-      this.getRootKey();
+    const keys = [];
 
-    return this.graph
-      .nodes()
-      .filter(
-        nodeKey =>
-          nodeKey !== rootKey
-      );
+    for (const key of this.graph.nodes()) {
+      if (key === this.getRootKey()) {
+        continue;
+      }
+
+      const { x, y } = this.fromKey(key);
+
+      if (!this.isInside(x, y)) {
+        continue;
+      }
+
+      const type = this.grid[y][x];
+
+      if (
+        type === TYPE.PLANT ||
+        type === TYPE.POWERED
+      ) {
+        keys.push(key);
+      }
+    }
+
+    return keys;
   }
 
   countPlants() {
@@ -170,36 +164,30 @@ export class GameEngine {
       return true;
     }
 
+    const type = this.grid[y][x];
+
+    if (type === TYPE.WALL) {
+      return true;
+    }
+
+    if (type === TYPE.GEM) {
+      return true;
+    }
+
+    if (type === TYPE.ROOT) {
+      return true;
+    }
+
     if (
-      this.grid[y][x] === TYPE.WALL
+      type === TYPE.PLANT ||
+      type === TYPE.POWERED
     ) {
       return true;
     }
 
     if (
-      x === this.player.x &&
-      y === this.player.y
-    ) {
-      return true;
-    }
-
-    if (
-      x === this.gem.x &&
-      y === this.gem.y
-    ) {
-      return true;
-    }
-
-    if (
-      x === this.root.x &&
-      y === this.root.y
-    ) {
-      return true;
-    }
-
-    if (
-      this.grid[y][x] === TYPE.PLANT ||
-      this.grid[y][x] === TYPE.POWERED
+      this.player.x === x &&
+      this.player.y === y
     ) {
       return true;
     }
@@ -207,53 +195,31 @@ export class GameEngine {
     return false;
   }
 
-  addBranch(
-    fromKey,
-    x,
-    y
-  ) {
+  addBranch(parentKey, x, y) {
     if (!this.isInside(x, y)) {
       return false;
     }
 
-    if (
-      !this.graph.hasNode(fromKey)
-    ) {
+    if (!this.graph.hasNode(parentKey)) {
       return false;
     }
 
-    if (
-      this.countPlants() >=
-      MAX_PLANT_NODES
-    ) {
+    if (this.countPlants() >= MAX_PLANT_NODES) {
       return false;
     }
 
-    if (
-      this.isCellBlockedForGrowth(
-        x,
-        y
-      )
-    ) {
+    if (this.isCellBlockedForGrowth(x, y)) {
       return false;
     }
 
-    const targetKey =
-      this.key(x, y);
+    const childKey = this.key(x, y);
 
-    if (
-      this.graph.hasNode(targetKey)
-    ) {
+    if (this.graph.hasNode(childKey)) {
       return false;
     }
 
-    const parent =
-      this.fromKey(fromKey);
+    const parent = this.fromKey(parentKey);
 
-    /*
-     * Planta somente cresce
-     * ortogonalmente.
-     */
     const distance =
       Math.abs(parent.x - x) +
       Math.abs(parent.y - y);
@@ -262,52 +228,37 @@ export class GameEngine {
       return false;
     }
 
-    this.graph.addNode(
-      targetKey
-    );
-
+    this.graph.addNode(childKey);
     this.graph.addEdge(
-      fromKey,
-      targetKey
+      parentKey,
+      childKey
     );
 
-    this.grid[y][x] =
-      TYPE.PLANT;
+    this.grid[y][x] = TYPE.PLANT;
 
     return true;
   }
 
-  removeNode(nodeKey) {
-    /*
-     * ROOT nunca pode ser removido.
-     */
-    if (
-      nodeKey === this.getRootKey()
-    ) {
+  removeNode(key) {
+    if (key === this.getRootKey()) {
       return false;
     }
 
-    if (
-      !this.graph.hasNode(nodeKey)
-    ) {
+    if (!this.graph.hasNode(key)) {
       return false;
     }
 
-    const {
-      x,
-      y
-    } = this.fromKey(nodeKey);
+    const position = this.fromKey(key);
 
-    this.graph.removeNode(
-      nodeKey
-    );
+    this.graph.removeNode(key);
 
-    if (
-      this.isInside(x, y) &&
-      this.grid[y][x] !== TYPE.WALL
-    ) {
-      this.grid[y][x] =
-        TYPE.EMPTY;
+    if (this.isInside(position.x, position.y)) {
+      if (
+        this.grid[position.y][position.x] === TYPE.PLANT ||
+        this.grid[position.y][position.x] === TYPE.POWERED
+      ) {
+        this.grid[position.y][position.x] = TYPE.EMPTY;
+      }
     }
 
     return true;
@@ -321,140 +272,104 @@ export class GameEngine {
   }
 
   updateConnectivity() {
-    this.connectedNodes =
+    const connected =
       this.connectedFromRoot();
 
-    const rootKey =
-      this.getRootKey();
+    this.connectedNodes = connected;
 
-    for (
-      const nodeKey
-      of this.graph.nodes()
-    ) {
-      if (
-        nodeKey === rootKey
-      ) {
+    for (const key of this.graph.nodes()) {
+      if (key === this.getRootKey()) {
         continue;
       }
 
-      const {
-        x,
-        y
-      } = this.fromKey(nodeKey);
+      const position = this.fromKey(key);
 
-      if (
-        !this.isInside(x, y)
-      ) {
+      if (!this.isInside(position.x, position.y)) {
         continue;
       }
 
-      this.grid[y][x] =
-        this.connectedNodes.has(
-          nodeKey
-        )
-          ? TYPE.POWERED
-          : TYPE.PLANT;
+      if (connected.has(key)) {
+        this.grid[position.y][position.x] =
+          TYPE.POWERED;
+      } else {
+        this.grid[position.y][position.x] =
+          TYPE.PLANT;
+      }
     }
+
+    return connected;
   }
 
   removeOrphans() {
     const connected =
       this.connectedFromRoot();
 
-    const allNodes =
-      this.graph.nodes();
+    const orphanKeys = [];
 
-    let removed = 0;
-
-    for (
-      const nodeKey
-      of allNodes
-    ) {
-      if (
-        nodeKey ===
-        this.getRootKey()
-      ) {
+    for (const key of this.graph.nodes()) {
+      if (key === this.getRootKey()) {
         continue;
       }
 
-      if (
-        !connected.has(nodeKey)
-      ) {
-        if (
-          this.removeNode(
-            nodeKey
-          )
-        ) {
-          removed++;
-        }
+      if (!connected.has(key)) {
+        orphanKeys.push(key);
       }
     }
 
-    this.updateConnectivity();
+    for (const key of orphanKeys) {
+      this.removeNode(key);
+    }
 
-    return removed;
+    this.connectedNodes =
+      this.connectedFromRoot();
+
+    return orphanKeys;
   }
 
-  pruneAt(x, y) {
+  pruneAt(key) {
     if (this.gameOver) {
       return false;
     }
 
-    if (
-      !this.isInside(x, y)
-    ) {
+    if (!this.graph.hasNode(key)) {
+      this.message = "NÃO HÁ PLANTA AQUI";
       return false;
     }
 
-    const targetKey =
-      this.key(x, y);
-
-    if (
-      !this.graph.hasNode(
-        targetKey
-      )
-    ) {
-      return false;
-    }
-
-    if (
-      targetKey ===
-      this.getRootKey()
-    ) {
+    if (key === this.getRootKey()) {
+      this.message = "A RAIZ NÃO PODE SER PODADA";
       return false;
     }
 
     const removed =
-      this.removeNode(
-        targetKey
-      );
+      this.removeNode(key);
 
     if (!removed) {
       return false;
     }
 
-    const orphanCount =
+    const orphanKeys =
       this.removeOrphans();
 
-    this.score +=
-      1 + orphanCount;
+    const removedCount =
+      1 + orphanKeys.length;
 
-    this.lastAction = "prune";
+    this.score += removedCount;
 
-    if (orphanCount > 0) {
-      this.message =
-        `Poda realizada. ${orphanCount} galho(s) órfão(s) removido(s).`;
-    } else {
-      this.message =
-        "Poda realizada.";
-    }
+    this.lastAction = {
+      type: "prune",
+      key,
+      removedCount,
+    };
+
+    this.message =
+      removedCount > 1
+        ? `PODA: ${removedCount} NÓS REMOVIDOS`
+        : "PODA REALIZADA";
 
     this.updateConnectivity();
-
     this.updateVictory();
-
     this.validateGraph();
-
     this.notify();
 
     return true;
@@ -465,47 +380,72 @@ export class GameEngine {
       return false;
     }
 
-    for (
-      const direction
-      of DIRECTIONS
-    ) {
+    const candidates = [];
+
+    for (const direction of DIRECTIONS) {
       const x =
-        this.player.x +
-        direction.x;
+        this.player.x + direction.x;
 
       const y =
-        this.player.y +
-        direction.y;
+        this.player.y + direction.y;
 
-      if (
-        !this.isInside(x, y)
-      ) {
+      if (!this.isInside(x, y)) {
         continue;
       }
 
-      const cell =
-        this.grid[y][x];
+      const type = this.grid[y][x];
 
       if (
-        cell === TYPE.PLANT ||
-        cell === TYPE.POWERED
+        type === TYPE.PLANT ||
+        type === TYPE.POWERED
       ) {
-        return this.pruneAt(
-          x,
-          y
+        candidates.push(
+          this.key(x, y)
         );
       }
     }
 
-    this.message =
-      "Nenhum galho ao alcance para podar.";
+    if (candidates.length === 0) {
+      this.message =
+        "NENHUM RAMO ADJACENTE PARA PODAR";
 
-    this.lastAction =
-      "prune-fail";
+      this.lastAction = {
+        type: "prune_failed",
+      };
 
-    this.notify();
+      this.notify();
 
-    return false;
+      return false;
+    }
+
+    return this.pruneAt(
+      candidates[0]
+    );
+  }
+
+  shuffle(array) {
+    const copy = [...array];
+
+    for (
+      let i = copy.length - 1;
+      i > 0;
+      i--
+    ) {
+      const j =
+        Math.floor(
+          Math.random() * (i + 1)
+        );
+
+      [
+        copy[i],
+        copy[j],
+      ] = [
+        copy[j],
+        copy[i],
+      ];
+    }
+
+    return copy;
   }
 
   grow() {
@@ -517,46 +457,37 @@ export class GameEngine {
       this.countPlants() >=
       MAX_PLANT_NODES
     ) {
+      this.message =
+        "CRESCIMENTO MÁXIMO ATINGIDO";
+
       return false;
     }
 
     const sources =
-      this.graph.nodes();
-
-    const shuffledSources =
-      [...sources].sort(
-        () =>
-          Math.random() -
-          0.5
+      this.shuffle(
+        this.graph.nodes()
       );
 
-    for (
-      const sourceKey
-      of shuffledSources
-    ) {
-      const source =
-        this.fromKey(
-          sourceKey
-        );
+    const directions =
+      this.shuffle(
+        DIRECTIONS
+      );
 
-      const directions =
-        [...DIRECTIONS].sort(
-          () =>
-            Math.random() -
-            0.5
-        );
+    for (const sourceKey of sources) {
+      const source =
+        this.fromKey(sourceKey);
+
+      const shuffledDirections =
+        this.shuffle(directions);
 
       for (
-        const direction
-        of directions
+        const direction of shuffledDirections
       ) {
         const x =
-          source.x +
-          direction.x;
+          source.x + direction.x;
 
         const y =
-          source.y +
-          direction.y;
+          source.y + direction.y;
 
         if (
           this.addBranch(
@@ -565,79 +496,65 @@ export class GameEngine {
             y
           )
         ) {
-          this.lastAction =
-            "grow";
+          this.lastAction = {
+            type: "grow",
+            from: sourceKey,
+            to: this.key(x, y),
+          };
 
           this.message =
-            "A planta encontrou um novo caminho.";
-
-          this.updateConnectivity();
-
-          this.updateVictory();
-
-          this.validateGraph();
-
-          this.notify();
+            "A PLANTA CRESCEU";
 
           return true;
         }
       }
     }
 
+    this.message =
+      "A PLANTA NÃO PODE CRESCER";
+
     return false;
   }
 
+  isAdjacentToGem(key) {
+    const position =
+      this.fromKey(key);
+
+    return (
+      Math.abs(
+        position.x - this.gem.x
+      ) +
+      Math.abs(
+        position.y - this.gem.y
+      ) === 1
+    );
+  }
+
   updateVictory() {
-    if (this.gameOver) {
-      return;
+    const connected =
+      this.connectedFromRoot();
+
+    this.connectedNodes =
+      connected;
+
+    for (const key of connected) {
+      if (key === this.getRootKey()) {
+        continue;
+      }
+
+      if (this.isAdjacentToGem(key)) {
+        this.victory = true;
+        this.gameOver = true;
+        this.message =
+          "VITÓRIA — A PLANTA ALCANÇOU O GEM";
+
+        return true;
+      }
     }
 
-    const gemX =
-      this.gem.x;
+    this.victory = false;
 
-    const gemY =
-      this.gem.y;
-
-    /*
-     * Vitória acontece quando um nó
-     * conectado à ROOT fica
-     * ortogonalmente adjacente à GEM.
-     */
-    const connectedToGem =
-      [...this.connectedNodes].some(
-        nodeKey => {
-          if (
-            nodeKey ===
-            this.getRootKey()
-          ) {
-            return false;
-          }
-
-          const {
-            x,
-            y
-          } = this.fromKey(
-            nodeKey
-          );
-
-          return (
-            Math.abs(x - gemX) +
-              Math.abs(y - gemY) ===
-            1
-          );
-        }
-      );
-
-    if (connectedToGem) {
-      this.victory = true;
-      this.gameOver = true;
-
-      this.message =
-        "A planta conectou a raiz à gema.";
-
-      this.lastAction =
-        "victory";
-    }
+    return false;
   }
 
   move(dx, dy) {
@@ -657,71 +574,74 @@ export class GameEngine {
         nextY
       )
     ) {
+      this.message =
+        "MOVIMENTO BLOQUEADO";
+
       return false;
     }
 
-    const cell =
+    const type =
       this.grid[nextY][nextX];
 
-    if (cell === TYPE.WALL) {
+    if (type === TYPE.WALL) {
       this.message =
-        "Parede bloqueando o caminho.";
-
-      this.lastAction =
-        "blocked";
-
-      this.notify();
+        "PAREDE";
 
       return false;
     }
 
-    /*
-     * O robô não atravessa
-     * ROOT nem planta.
-     */
     if (
-      cell === TYPE.PLANT ||
-      cell === TYPE.POWERED ||
-      cell === TYPE.ROOT
+      type === TYPE.PLANT ||
+      type === TYPE.POWERED
     ) {
       this.message =
-        "O robô não pode atravessar a planta.";
-
-      this.lastAction =
-        "blocked";
-
-      this.notify();
+        "RAMO BLOQUEANDO O CAMINHO";
 
       return false;
     }
 
-    this.player.x =
-      nextX;
+    if (type === TYPE.ROOT) {
+      this.message =
+        "RAIZ BLOQUEANDO O CAMINHO";
 
-    this.player.y =
-      nextY;
+      return false;
+    }
 
-    this.lastAction =
-      "move";
+    if (type === TYPE.GEM) {
+      this.message =
+        "O GEM PRECISA SER ALCANÇADO PELA PLANTA";
 
-    this.message =
-      "Movimento realizado.";
+      return false;
+    }
 
-    /*
-     * Cada movimento válido
-     * permite uma tentativa de crescimento.
-     */
+    this.player = {
+      x: nextX,
+      y: nextY,
+    };
+
+    this.lastAction = {
+      type: "move",
+      player: {
+        ...this.player,
+      },
+    };
+
+    this.message = "MOVIMENTO";
+
     this.grow();
-
     this.updateConnectivity();
-
     this.updateVictory();
-
     this.validateGraph();
-
     this.notify();
 
     return true;
+  }
+
+  updateAfterAction() {
+    this.updateConnectivity();
+    this.updateVictory();
+    this.validateGraph();
+    this.notify();
   }
 
   validateGraph() {
@@ -730,175 +650,135 @@ export class GameEngine {
     const rootKey =
       this.getRootKey();
 
-    /*
-     * ROOT precisa existir no Graph.
-     */
-    if (
-      !this.graph.hasNode(
-        rootKey
-      )
-    ) {
+    if (!this.graph.hasNode(rootKey)) {
       errors.push(
-        "ROOT ausente do Graph."
+        "ROOT não existe no Graph"
       );
     }
 
-    /*
-     * Validação Graph -> Grid.
-     */
-    for (
-      const [
-        nodeKey,
-        neighbors
-      ] of this.graph.entries()
-    ) {
-      const {
-        x,
-        y
-      } = this.fromKey(
-        nodeKey
-      );
+    for (const key of this.graph.nodes()) {
+      const position =
+        this.fromKey(key);
 
       if (
-        !this.isInside(x, y)
+        !this.isInside(
+          position.x,
+          position.y
+        )
       ) {
         errors.push(
-          `Nó fora do mapa: ${nodeKey}`
+          `Nó fora do mapa: ${key}`
         );
+
+        continue;
       }
 
-      if (
-        nodeKey !== rootKey &&
-        this.grid[y]?.[x] !==
-          TYPE.PLANT &&
-        this.grid[y]?.[x] !==
-          TYPE.POWERED
-      ) {
-        errors.push(
-          `Graph/Grid inconsistente: ${nodeKey}`
-        );
-      }
+      if (key !== rootKey) {
+        const type =
+          this.grid[position.y][position.x];
 
-      /*
-       * Toda referência deve
-       * apontar para um nó existente.
-       */
-      for (
-        const neighborKey
-        of neighbors
-      ) {
         if (
-          !this.graph.hasNode(
-            neighborKey
-          )
+          type !== TYPE.PLANT &&
+          type !== TYPE.POWERED
         ) {
           errors.push(
-            `Referência inválida: ${nodeKey} -> ${neighborKey}`
+            `Nó do Graph sem planta no Grid: ${key}`
+          );
+        }
+      }
+
+      for (
+        const neighbor
+        of this.graph.getNeighbors(key)
+      ) {
+        if (
+          !this.graph.hasNode(neighbor)
+        ) {
+          errors.push(
+            `Referência inválida: ${key} -> ${neighbor}`
           );
 
           continue;
         }
 
-        const neighbor =
-          this.fromKey(
-            neighborKey
-          );
+        const neighborPosition =
+          this.fromKey(neighbor);
 
-        /*
-         * Arestas precisam ser
-         * ortogonais.
-         */
         const distance =
           Math.abs(
-            x - neighbor.x
+            position.x -
+              neighborPosition.x
           ) +
           Math.abs(
-            y - neighbor.y
+            position.y -
+              neighborPosition.y
           );
 
-        if (
-          distance !== 1
-        ) {
+        if (distance !== 1) {
           errors.push(
-            `Aresta não ortogonal: ${nodeKey} -> ${neighborKey}`
+            `Aresta não ortogonal: ${key} -> ${neighbor}`
           );
         }
       }
     }
 
-    /*
-     * Validação Grid -> Graph.
-     */
-    for (
-      let y = 0;
-      y < ROWS;
-      y++
-    ) {
-      for (
-        let x = 0;
-        x < COLS;
-        x++
-      ) {
-        const cell =
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        const type =
           this.grid[y][x];
 
-        if (
-          cell !== TYPE.PLANT &&
-          cell !== TYPE.POWERED
-        ) {
-          continue;
-        }
-
-        const nodeKey =
+        const key =
           this.key(x, y);
 
         if (
-          !this.graph.hasNode(
-            nodeKey
-          )
+          type === TYPE.PLANT ||
+          type === TYPE.POWERED
+        ) {
+          if (!this.graph.hasNode(key)) {
+            errors.push(
+              `Planta no Grid sem nó no Graph: ${key}`
+            );
+          }
+        }
+
+        if (
+          type === TYPE.ROOT &&
+          key !== rootKey
         ) {
           errors.push(
-            `Planta sem nó no Graph: ${nodeKey}`
+            `ROOT inesperado no Grid: ${key}`
           );
         }
       }
     }
 
     return {
-      valid:
-        errors.length === 0,
-
-      errors
+      valid: errors.length === 0,
+      errors,
     };
   }
 
   getSnapshot() {
     return {
-      gameOver:
-        this.gameOver,
-
-      victory:
-        this.victory,
-
-      score:
-        this.score,
+      gameOver: this.gameOver,
+      victory: this.victory,
+      score: this.score,
 
       player: {
-        ...this.player
+        ...this.player,
       },
 
       root: {
-        ...this.root
+        ...this.root,
       },
 
       gem: {
-        ...this.gem
+        ...this.gem,
       },
 
-      grid:
-        this.grid.map(
-          row => [...row]
-        ),
+      grid: this.grid.map(
+        (row) => [...row]
+      ),
 
       connectedNodes:
         new Set(
@@ -914,8 +794,14 @@ export class GameEngine {
       lastAction:
         this.lastAction,
 
+      // Disponibiliza as arestas do Graph
+      // para o renderer sem permitir que
+      // a apresentação altere o Graph.
+      graphEntries:
+        this.graph.entries(),
+
       graphValidation:
-        this.validateGraph()
+        this.validateGraph(),
     };
   }
 }
