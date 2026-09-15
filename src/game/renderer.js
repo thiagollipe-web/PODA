@@ -802,10 +802,10 @@ export class GameRenderer {
      */
 
     const maxWidth =
-      TILE * 0.92;
+      TILE * 1.05;
 
     const maxHeight =
-      TILE * 0.92;
+      TILE * 1.05;
 
     const scale =
       Math.min(
