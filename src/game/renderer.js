@@ -9,11 +9,9 @@ import {
 export class GameRenderer {
   constructor(ctx, onAssetLoaded = null) {
     this.ctx = ctx;
-
     this.robotImage = new Image();
     this.robotLoaded = false;
     this.robotCanvas = null;
-
     this.onAssetLoaded = onAssetLoaded;
 
     this.robotImage.onload = () => {
@@ -22,7 +20,6 @@ export class GameRenderer {
 
     this.robotImage.onerror = () => {
       this.robotLoaded = false;
-
       console.warn(
         `Não foi possível carregar o robô: ${ROBOT_ASSET}`
       );
@@ -30,10 +27,6 @@ export class GameRenderer {
 
     this.robotImage.src = ROBOT_ASSET;
   }
-
-  // ============================================================
-  // ROBOT IMAGE PREPARATION
-  // ============================================================
 
   prepareRobotImage() {
     const width = this.robotImage.naturalWidth;
@@ -44,28 +37,23 @@ export class GameRenderer {
       return;
     }
 
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    const source = document.createElement("canvas");
+    source.width = width;
+    source.height = height;
 
-    const ctx = canvas.getContext("2d", {
+    const sourceCtx = source.getContext("2d", {
       willReadFrequently: true,
     });
 
-    if (!ctx) {
+    if (!sourceCtx) {
       this.robotLoaded = false;
       return;
     }
 
-    ctx.imageSmoothingEnabled = false;
+    sourceCtx.imageSmoothingEnabled = false;
+    sourceCtx.drawImage(this.robotImage, 0, 0);
 
-    ctx.drawImage(
-      this.robotImage,
-      0,
-      0
-    );
-
-    const imageData = ctx.getImageData(
+    const imageData = sourceCtx.getImageData(
       0,
       0,
       width,
@@ -79,15 +67,11 @@ export class GameRenderer {
     let maxX = -1;
     let maxY = -1;
 
-    // Procura somente pixels visíveis.
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const index =
-          (y * width + x) * 4;
+        const index = (y * width + x) * 4;
 
-        const alpha = data[index + 3];
-
-        if (alpha > 10) {
+        if (data[index + 3] > 10) {
           minX = Math.min(minX, x);
           minY = Math.min(minY, y);
           maxX = Math.max(maxX, x);
@@ -96,62 +80,36 @@ export class GameRenderer {
       }
     }
 
-    // Nenhum pixel visível.
-    if (
-      maxX < 0 ||
-      maxY < 0
-    ) {
+    if (maxX < 0 || maxY < 0) {
       this.robotLoaded = false;
       return;
     }
 
     const padding = 1;
 
-    minX = Math.max(
-      0,
-      minX - padding
-    );
+    minX = Math.max(0, minX - padding);
+    minY = Math.max(0, minY - padding);
+    maxX = Math.min(width - 1, maxX + padding);
+    maxY = Math.min(height - 1, maxY + padding);
 
-    minY = Math.max(
-      0,
-      minY - padding
-    );
+    const cropWidth = maxX - minX + 1;
+    const cropHeight = maxY - minY + 1;
 
-    maxX = Math.min(
-      width - 1,
-      maxX + padding
-    );
-
-    maxY = Math.min(
-      height - 1,
-      maxY + padding
-    );
-
-    const cropWidth =
-      maxX - minX + 1;
-
-    const cropHeight =
-      maxY - minY + 1;
-
-    const cropped =
-      document.createElement("canvas");
-
+    const cropped = document.createElement("canvas");
     cropped.width = cropWidth;
     cropped.height = cropHeight;
 
-    const croppedCtx =
-      cropped.getContext("2d");
+    const croppedCtx = cropped.getContext("2d");
 
     if (!croppedCtx) {
       this.robotLoaded = false;
       return;
     }
 
-    croppedCtx.imageSmoothingEnabled =
-      false;
+    croppedCtx.imageSmoothingEnabled = false;
 
     croppedCtx.drawImage(
-      canvas,
+      source,
       minX,
       minY,
       cropWidth,
@@ -170,18 +128,11 @@ export class GameRenderer {
     }
   }
 
-  // ============================================================
-  // MAIN RENDER
-  // ============================================================
-
   render(engine) {
-    const snapshot =
-      engine.getSnapshot();
-
+    const snapshot = engine.getSnapshot();
     const { ctx } = this;
 
-    ctx.imageSmoothingEnabled =
-      false;
+    ctx.imageSmoothingEnabled = false;
 
     ctx.clearRect(
       0,
@@ -191,20 +142,10 @@ export class GameRenderer {
     );
 
     this.drawBackground();
-
     this.drawGrid(snapshot);
-
-    this.drawPlantConnections(
-      snapshot
-    );
-
-    this.drawGem(
-      snapshot.gem
-    );
-
-    this.drawRobot(
-      snapshot.player
-    );
+    this.drawPlantConnections(snapshot);
+    this.drawGem(snapshot.gem);
+    this.drawRobot(snapshot.player);
   }
 
   // ============================================================
@@ -214,7 +155,7 @@ export class GameRenderer {
   drawBackground() {
     const { ctx } = this;
 
-    ctx.fillStyle = "#050505";
+    ctx.fillStyle = "#030303";
 
     ctx.fillRect(
       0,
@@ -222,6 +163,22 @@ export class GameRenderer {
       COLS * TILE,
       ROWS * TILE
     );
+
+    // Pequenos pontos de textura
+    ctx.fillStyle = "#0b0b0b";
+
+    for (let y = 1; y < ROWS - 1; y++) {
+      for (let x = 1; x < COLS - 1; x++) {
+        if ((x * 7 + y * 11) % 13 === 0) {
+          ctx.fillRect(
+            x * TILE + 7,
+            y * TILE + 9,
+            2,
+            2
+          );
+        }
+      }
+    }
   }
 
   // ============================================================
@@ -231,8 +188,7 @@ export class GameRenderer {
   drawGrid(snapshot) {
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
-        const type =
-          snapshot.grid[y][x];
+        const type = snapshot.grid[y][x];
 
         switch (type) {
           case TYPE.WALL:
@@ -244,19 +200,11 @@ export class GameRenderer {
             break;
 
           case TYPE.PLANT:
-            this.drawPlantNode(
-              x,
-              y,
-              false
-            );
+            this.drawPlantNode(x, y, false);
             break;
 
           case TYPE.POWERED:
-            this.drawPlantNode(
-              x,
-              y,
-              true
-            );
+            this.drawPlantNode(x, y, true);
             break;
 
           default:
@@ -271,41 +219,24 @@ export class GameRenderer {
   drawGridLines() {
     const { ctx } = this;
 
-    ctx.strokeStyle = "#101010";
+    ctx.strokeStyle = "#0d0d0d";
     ctx.lineWidth = 1;
 
     for (let x = 0; x <= COLS; x++) {
-      const px =
-        x * TILE + 0.5;
+      const px = x * TILE + 0.5;
 
       ctx.beginPath();
-
       ctx.moveTo(px, 0);
-
-      ctx.lineTo(
-        px,
-        ROWS * TILE
-      );
-
+      ctx.lineTo(px, ROWS * TILE);
       ctx.stroke();
     }
 
     for (let y = 0; y <= ROWS; y++) {
-      const py =
-        y * TILE + 0.5;
+      const py = y * TILE + 0.5;
 
       ctx.beginPath();
-
-      ctx.moveTo(
-        0,
-        py
-      );
-
-      ctx.lineTo(
-        COLS * TILE,
-        py
-      );
-
+      ctx.moveTo(0, py);
+      ctx.lineTo(COLS * TILE, py);
       ctx.stroke();
     }
   }
@@ -320,16 +251,10 @@ export class GameRenderer {
     const px = x * TILE;
     const py = y * TILE;
 
-    ctx.fillStyle = "#151515";
+    ctx.fillStyle = "#171717";
+    ctx.fillRect(px, py, TILE, TILE);
 
-    ctx.fillRect(
-      px,
-      py,
-      TILE,
-      TILE
-    );
-
-    ctx.strokeStyle = "#333";
+    ctx.strokeStyle = "#3a3a3a";
     ctx.lineWidth = 2;
 
     ctx.strokeRect(
@@ -339,28 +264,11 @@ export class GameRenderer {
       TILE - 2
     );
 
-    ctx.fillStyle = "#242424";
+    ctx.fillStyle = "#292929";
 
-    ctx.fillRect(
-      px + 6,
-      py + 7,
-      8,
-      3
-    );
-
-    ctx.fillRect(
-      px + 24,
-      py + 22,
-      9,
-      3
-    );
-
-    ctx.fillRect(
-      px + 12,
-      py + 31,
-      5,
-      2
-    );
+    ctx.fillRect(px + 6, py + 7, 8, 3);
+    ctx.fillRect(px + 24, py + 22, 9, 3);
+    ctx.fillRect(px + 12, py + 31, 5, 2);
   }
 
   // ============================================================
@@ -370,94 +278,46 @@ export class GameRenderer {
   drawRoot(x, y) {
     const { ctx } = this;
 
-    const centerX =
-      x * TILE + TILE / 2;
-
-    const centerY =
-      y * TILE + TILE / 2;
+    const cx = x * TILE + TILE / 2;
+    const cy = y * TILE + TILE / 2;
 
     ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 6;
+    ctx.lineWidth = 7;
     ctx.lineCap = "square";
 
+    // Raízes principais
     ctx.beginPath();
 
-    ctx.moveTo(
-      centerX,
-      centerY
-    );
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx - 15, cy);
 
-    ctx.lineTo(
-      centerX - 14,
-      centerY
-    );
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + 15, cy);
 
-    ctx.moveTo(
-      centerX,
-      centerY
-    );
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy - 15);
 
-    ctx.lineTo(
-      centerX + 14,
-      centerY
-    );
-
-    ctx.moveTo(
-      centerX,
-      centerY
-    );
-
-    ctx.lineTo(
-      centerX,
-      centerY - 14
-    );
-
-    ctx.moveTo(
-      centerX,
-      centerY
-    );
-
-    ctx.lineTo(
-      centerX,
-      centerY + 14
-    );
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy + 15);
 
     ctx.stroke();
 
-    // Ramificações secundárias
+    // Raízes secundárias
     ctx.lineWidth = 3;
 
     ctx.beginPath();
 
-    ctx.moveTo(
-      centerX - 7,
-      centerY
-    );
+    ctx.moveTo(cx - 7, cy);
+    ctx.lineTo(cx - 14, cy - 7);
 
-    ctx.lineTo(
-      centerX - 13,
-      centerY - 7
-    );
+    ctx.moveTo(cx + 7, cy);
+    ctx.lineTo(cx + 14, cy + 7);
 
-    ctx.moveTo(
-      centerX + 7,
-      centerY
-    );
+    ctx.moveTo(cx, cy + 7);
+    ctx.lineTo(cx - 7, cy + 14);
 
-    ctx.lineTo(
-      centerX + 13,
-      centerY + 7
-    );
-
-    ctx.moveTo(
-      centerX,
-      centerY + 7
-    );
-
-    ctx.lineTo(
-      centerX - 7,
-      centerY + 13
-    );
+    ctx.moveTo(cx, cy - 7);
+    ctx.lineTo(cx + 7, cy - 14);
 
     ctx.stroke();
 
@@ -465,45 +325,34 @@ export class GameRenderer {
     ctx.fillStyle = "#fff";
 
     ctx.fillRect(
-      centerX - 6,
-      centerY - 6,
-      12,
-      12
+      cx - 7,
+      cy - 7,
+      14,
+      14
     );
 
     ctx.fillStyle = "#000";
 
     ctx.fillRect(
-      centerX - 2,
-      centerY - 2,
-      4,
-      4
+      cx - 3,
+      cy - 3,
+      6,
+      6
     );
   }
 
   // ============================================================
-  // PLANT CONNECTIONS
+  // GRAPH BRANCHES
   // ============================================================
 
   drawPlantConnections(snapshot) {
-    if (
-      !snapshot ||
-      !snapshot.connectedNodes
-    ) {
-      return;
-    }
-
-    const entries =
-      snapshot.graphEntries;
+    const entries = snapshot.graphEntries;
 
     if (!entries) {
       return;
     }
 
-    for (const [
-      from,
-      neighbors,
-    ] of entries) {
+    for (const [from, neighbors] of entries) {
       const fromPosition =
         this.keyToPosition(from);
 
@@ -520,12 +369,8 @@ export class GameRenderer {
         }
 
         const powered =
-          snapshot.connectedNodes.has(
-            from
-          ) &&
-          snapshot.connectedNodes.has(
-            to
-          );
+          snapshot.connectedNodes.has(from) &&
+          snapshot.connectedNodes.has(to);
 
         this.drawBranchSegment(
           fromPosition,
@@ -536,53 +381,55 @@ export class GameRenderer {
     }
   }
 
-  drawBranchSegment(
-    from,
-    to,
-    powered
-  ) {
+  drawBranchSegment(from, to, powered) {
     const { ctx } = this;
 
-    const x1 =
-      from.x * TILE +
-      TILE / 2;
+    const x1 = from.x * TILE + TILE / 2;
+    const y1 = from.y * TILE + TILE / 2;
 
-    const y1 =
-      from.y * TILE +
-      TILE / 2;
+    const x2 = to.x * TILE + TILE / 2;
+    const y2 = to.y * TILE + TILE / 2;
 
-    const x2 =
-      to.x * TILE +
-      TILE / 2;
+    const color = powered
+      ? "#fff"
+      : "#555";
 
-    const y2 =
-      to.y * TILE +
-      TILE / 2;
+    ctx.strokeStyle = color;
+    ctx.lineCap = "square";
 
-    ctx.strokeStyle =
-      powered
-        ? "#fff"
-        : "#555";
+    // Tronco principal
+    ctx.lineWidth = powered ? 7 : 5;
 
-    ctx.lineWidth =
-      powered
-        ? 6
-        : 4;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
 
-    ctx.lineCap =
-      "square";
+    // Pequenos galhos decorativos
+    // Não representam novas arestas do Graph.
+    ctx.lineWidth = powered ? 2 : 2;
+
+    const horizontal = y1 === y2;
 
     ctx.beginPath();
 
-    ctx.moveTo(
-      x1,
-      y1
-    );
+    if (horizontal) {
+      const midX = Math.round((x1 + x2) / 2);
 
-    ctx.lineTo(
-      x2,
-      y2
-    );
+      ctx.moveTo(midX, y1);
+      ctx.lineTo(
+        midX + (x2 > x1 ? -5 : 5),
+        y1 - 6
+      );
+    } else {
+      const midY = Math.round((y1 + y2) / 2);
+
+      ctx.moveTo(x1, midY);
+      ctx.lineTo(
+        x1 + (y2 > y1 ? 6 : -6),
+        midY + (y2 > y1 ? -5 : 5)
+      );
+    }
 
     ctx.stroke();
   }
@@ -591,62 +438,56 @@ export class GameRenderer {
   // PLANT NODE
   // ============================================================
 
-  drawPlantNode(
-    x,
-    y,
-    powered
-  ) {
+  drawPlantNode(x, y, powered) {
     const { ctx } = this;
 
-    const centerX =
-      x * TILE +
-      TILE / 2;
+    const cx = x * TILE + TILE / 2;
+    const cy = y * TILE + TILE / 2;
 
-    const centerY =
-      y * TILE +
-      TILE / 2;
+    const color = powered
+      ? "#fff"
+      : "#666";
 
-    const color =
-      powered
-        ? "#fff"
-        : "#666";
-
-    // Folha esquerda
-    ctx.fillStyle =
-      color;
+    // Pequenas folhas pixeladas
+    ctx.fillStyle = color;
 
     ctx.fillRect(
-      centerX - 12,
-      centerY - 3,
-      8,
-      5
+      cx - 12,
+      cy - 4,
+      7,
+      4
     );
 
-    // Folha direita
     ctx.fillRect(
-      centerX + 4,
-      centerY - 3,
-      8,
-      5
+      cx + 5,
+      cy,
+      7,
+      4
     );
 
-    // Nó
+    // Nó arredondado em pixel-art
     ctx.fillRect(
-      centerX - 6,
-      centerY - 6,
-      12,
-      12
+      cx - 5,
+      cy - 7,
+      10,
+      14
+    );
+
+    ctx.fillRect(
+      cx - 7,
+      cy - 5,
+      14,
+      10
     );
 
     // Núcleo
-    ctx.fillStyle =
-      powered
-        ? "#000"
-        : "#222";
+    ctx.fillStyle = powered
+      ? "#000"
+      : "#222";
 
     ctx.fillRect(
-      centerX - 2,
-      centerY - 2,
+      cx - 2,
+      cy - 2,
       4,
       4
     );
@@ -663,22 +504,20 @@ export class GameRenderer {
 
     const { ctx } = this;
 
-    const centerX =
-      position.x * TILE +
-      TILE / 2;
+    const cx =
+      position.x * TILE + TILE / 2;
 
-    const centerY =
-      position.y * TILE +
-      TILE / 2;
+    const cy =
+      position.y * TILE + TILE / 2;
 
     // Aura
-    ctx.fillStyle = "#222";
+    ctx.fillStyle = "#151515";
 
     ctx.fillRect(
-      centerX - 16,
-      centerY - 16,
-      32,
-      32
+      cx - 17,
+      cy - 17,
+      34,
+      34
     );
 
     // Diamante
@@ -686,28 +525,12 @@ export class GameRenderer {
 
     ctx.beginPath();
 
-    ctx.moveTo(
-      centerX,
-      centerY - 14
-    );
-
-    ctx.lineTo(
-      centerX + 11,
-      centerY
-    );
-
-    ctx.lineTo(
-      centerX,
-      centerY + 14
-    );
-
-    ctx.lineTo(
-      centerX - 11,
-      centerY
-    );
+    ctx.moveTo(cx, cy - 15);
+    ctx.lineTo(cx + 12, cy);
+    ctx.lineTo(cx, cy + 15);
+    ctx.lineTo(cx - 12, cy);
 
     ctx.closePath();
-
     ctx.fill();
 
     // Interior
@@ -715,38 +538,22 @@ export class GameRenderer {
 
     ctx.beginPath();
 
-    ctx.moveTo(
-      centerX,
-      centerY - 7
-    );
-
-    ctx.lineTo(
-      centerX + 5,
-      centerY
-    );
-
-    ctx.lineTo(
-      centerX,
-      centerY + 7
-    );
-
-    ctx.lineTo(
-      centerX - 5,
-      centerY
-    );
+    ctx.moveTo(cx, cy - 8);
+    ctx.lineTo(cx + 6, cy);
+    ctx.lineTo(cx, cy + 8);
+    ctx.lineTo(cx - 6, cy);
 
     ctx.closePath();
-
     ctx.fill();
 
     // Brilho
     ctx.fillStyle = "#fff";
 
     ctx.fillRect(
-      centerX - 2,
-      centerY - 9,
+      cx - 3,
+      cy - 10,
       4,
-      3
+      4
     );
   }
 
@@ -768,19 +575,13 @@ export class GameRenderer {
 
     const { ctx } = this;
 
-    const centerX =
-      position.x * TILE +
-      TILE / 2;
+    const cx =
+      position.x * TILE + TILE / 2;
 
-    const centerY =
-      position.y * TILE +
-      TILE / 2;
+    const cy =
+      position.y * TILE + TILE / 2;
 
-    // Fallback
-    this.drawRobotFallback(
-      centerX,
-      centerY
-    );
+    this.drawRobotFallback(cx, cy);
 
     if (
       !this.robotLoaded ||
@@ -795,52 +596,35 @@ export class GameRenderer {
     const imageHeight =
       this.robotCanvas.height;
 
-    /*
-     * Agora o tamanho é calculado
-     * sobre o personagem recortado,
-     * e não sobre o PNG inteiro.
-     */
+    // Personagem ocupa praticamente o tile,
+    // sem distorcer a proporção.
+    const maxWidth = TILE * 1.05;
+    const maxHeight = TILE * 1.05;
 
-    const maxWidth =
-      TILE * 1.05;
+    const scale = Math.min(
+      maxWidth / imageWidth,
+      maxHeight / imageHeight
+    );
 
-    const maxHeight =
-      TILE * 1.05;
+    const width = Math.max(
+      1,
+      Math.round(imageWidth * scale)
+    );
 
-    const scale =
-      Math.min(
-        maxWidth / imageWidth,
-        maxHeight / imageHeight
-      );
+    const height = Math.max(
+      1,
+      Math.round(imageHeight * scale)
+    );
 
-    const width =
-      Math.max(
-        1,
-        Math.round(
-          imageWidth * scale
-        )
-      );
+    const drawX = Math.round(
+      cx - width / 2
+    );
 
-    const height =
-      Math.max(
-        1,
-        Math.round(
-          imageHeight * scale
-        )
-      );
+    const drawY = Math.round(
+      cy - height / 2
+    );
 
-    const drawX =
-      Math.round(
-        centerX - width / 2
-      );
-
-    const drawY =
-      Math.round(
-        centerY - height / 2
-      );
-
-    ctx.imageSmoothingEnabled =
-      false;
+    ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(
       this.robotCanvas,
@@ -851,59 +635,37 @@ export class GameRenderer {
     );
   }
 
-  drawRobotFallback(
-    centerX,
-    centerY
-  ) {
+  drawRobotFallback(cx, cy) {
     const { ctx } = this;
-
-    const width = 24;
-    const height = 26;
 
     ctx.fillStyle = "#fff";
 
     ctx.fillRect(
-      Math.round(
-        centerX - width / 2
-      ),
-      Math.round(
-        centerY - height / 2
-      ),
-      width,
-      height
+      Math.round(cx - 12),
+      Math.round(cy - 13),
+      24,
+      26
     );
 
     ctx.fillStyle = "#000";
 
     ctx.fillRect(
-      Math.round(
-        centerX - 7
-      ),
-      Math.round(
-        centerY - 6
-      ),
+      Math.round(cx - 7),
+      Math.round(cy - 6),
       4,
       4
     );
 
     ctx.fillRect(
-      Math.round(
-        centerX + 3
-      ),
-      Math.round(
-        centerY - 6
-      ),
+      Math.round(cx + 3),
+      Math.round(cy - 6),
       4,
       4
     );
 
     ctx.fillRect(
-      Math.round(
-        centerX - 6
-      ),
-      Math.round(
-        centerY + 5
-      ),
+      Math.round(cx - 6),
+      Math.round(cy + 5),
       12,
       2
     );
